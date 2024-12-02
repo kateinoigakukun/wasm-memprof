@@ -1,6 +1,6 @@
 # wasm-memprof - A heap memory profiler for WebAssembly
 
-![NPM Version](https://img.shields.io/npm/v/wasm-memprof)
+[![NPM Version](https://img.shields.io/npm/v/wasm-memprof)](https://www.npmjs.com/package/wasm-memprof)
 
 A sampling-based heap memory profiler for WebAssembly on JavaScript engines.
 
