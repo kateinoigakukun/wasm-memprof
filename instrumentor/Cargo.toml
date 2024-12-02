@@ -1,0 +1,20 @@
+[package]
+name = "instrumentor"
+version = "0.1.0"
+edition = "2021"
+
+[[bin]]
+name = "instrumentor"
+
+[lib]
+crate-type = ["lib", "cdylib"]
+
+[dependencies]
+anyhow = "1.0.93"
+log = "0.4.22"
+# walrus = "0.23.1"
+walrus = { path = "/Users/katei/ghq/github.com/rustwasm/walrus" }
+
+[dev-dependencies]
+wasmi = "0.40.0"
+wat = "1.221.0"

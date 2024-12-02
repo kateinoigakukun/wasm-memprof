@@ -1,0 +1,4 @@
+/instrumentor/target
+/bindgen/target
+/examples
+wasm-memprof-*.tgz

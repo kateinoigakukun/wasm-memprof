@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>Smoke Test</title>
+  </head>
+  <body>
+    <pre id="script-content"></pre>
+    <script type="module">
+        import { hook, WMProf } from '../dist/wasm-memprof.js';
+
+        async function start() {
+            const WebAssembly = hook(window.WebAssembly, { sampleRate: 1 });
+            const response = await fetch('../examples/a.out.wasm');
+            const { instance } = await WebAssembly.instantiateStreaming(response, {
+                wasi_snapshot_preview1: {
+                    proc_exit: (code) => {
+                        console.log('exit', code);
+                    }
+                }
+            });
+
+            instance.exports._start();
+            WMProf.get(instance).downloadSnapshot();
+        }
+
+        const button = document.createElement('button');
+        button.textContent = 'Run';
+        button.onclick = start;
+        document.body.appendChild(button);
+
+        const scriptContent = document.getElementById('script-content');
+        fetch('../examples/main.c')
+            .then(response => response.text())
+            .then(text => {
+                scriptContent.textContent = text;
+            });
+    </script>
+  </body>

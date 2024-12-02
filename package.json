@@ -1,0 +1,23 @@
+{
+    "name": "wasm-memprof",
+    "description": "A WebAssembly memory profiler",
+    "version": "0.1.0",
+    "license": "MIT",
+    "repository": {
+        "type": "git",
+        "url": "git+https://github.com/kateinoigakukun/wasm-memprof.git"
+    },
+    "type": "module",
+    "exports": {
+        ".": {
+            "module": "./dist/wasm-memprof.js",
+            "types": "./dist/wasm-memprof.d.ts"
+        },
+        "./plugins/*": "./dist/plugins/*"
+    },
+    "devDependencies": {
+        "typescript": "^5.7.2",
+        "protobufjs": "^7.4.0",
+        "protobufjs-cli": "^1.1.3"
+    }
+}

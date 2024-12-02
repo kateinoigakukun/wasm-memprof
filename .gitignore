@@ -1,0 +1,10 @@
+/bindgen/target
+/node_modules
+/proto
+
+# FIXME: For now we commit JS files generated using Swift toolchain
+# to avoid having complex build process. This should be fixed in the future.
+/dist/wasm-memprof.d.ts
+/dist/wasm-memprof.js
+
+wasm-memprof-*.tgz

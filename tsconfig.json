@@ -1,0 +1,18 @@
+{
+    "files": [
+        "./src/wasm-memprof.ts",
+        "./src/plugins/swift-demangler.ts",
+    ],
+    "compilerOptions": {
+        "target": "ES2023",
+        "lib": [
+            "ES2021",
+            "DOM"
+        ],
+        "outDir": "./dist",
+        "module": "ES2022",
+        "moduleResolution": "node",
+        "declaration": true,
+        "emitDeclarationOnly": true,
+    }
+}
