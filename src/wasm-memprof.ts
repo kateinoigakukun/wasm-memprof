@@ -358,6 +358,11 @@ export class WMProf {
             instantiate: async (bufferSource, importObject) => {
                 const wmprof = new WMProf(options);
                 if (bufferSource instanceof WebAssembly.Module) {
+                    if (!WebAssembly.Module.imports(bufferSource).find((i) => i.module === "wmprof")) {
+                        // If the module was compiled without instrumentation, just ignore it.
+                        // This is the case when the module was pre-compiled before enabling the profiler.
+                        return WebAssembly.instantiate(bufferSource, importObject);
+                    }
                     const instance = await WebAssembly.instantiate(bufferSource, instrumentImportObject(importObject, wmprof));
                     WMProf.install(instance, wmprof);
                     return instance;
