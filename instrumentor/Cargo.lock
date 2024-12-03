@@ -294,6 +294,7 @@ checksum = "0b928f33d975fc6ad9f86c8f283853ad26bdd5b10b7f1542aa2fa15e2289105a"
 [[package]]
 name = "walrus"
 version = "0.23.1"
+source = "git+https://github.com/rustwasm/walrus.git?rev=refs/pull/285/head#cd1c5922c7bb408beae336c1ec4497faaa5ab375"
 dependencies = [
  "anyhow",
  "gimli",
@@ -308,6 +309,7 @@ dependencies = [
 [[package]]
 name = "walrus-macro"
 version = "0.22.0"
+source = "git+https://github.com/rustwasm/walrus.git?rev=refs/pull/285/head#cd1c5922c7bb408beae336c1ec4497faaa5ab375"
 dependencies = [
  "heck",
  "proc-macro2",
