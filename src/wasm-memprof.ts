@@ -541,6 +541,15 @@ export class WMProf {
     }
 
     /**
+     * Download snapshots of all installed profilers as protobuf files.
+     */
+    public static downloadAllSnapshots() {
+        for (const wmprof of WMProf.#installed) {
+            wmprof.downloadSnapshot();
+        }
+    }
+
+    /**
      * Download the current snapshot as a protobuf file.
      */
     public downloadSnapshot() {
