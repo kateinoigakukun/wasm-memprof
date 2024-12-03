@@ -506,9 +506,13 @@ export class WMProf {
         // Skip some internal functions from the stack
         const shouldSkip = (callSite: NodeJS.CallSite): boolean => {
             const fileName = callSite.getFileName();
-            if (fileName?.includes("wasm-memprof.js")) {
+            // Skip functions from the profiler itself
+            // NOTE: The filename might not be "wasm-memprof.js" as is if
+            // the code is bundled. Thus, we loosely check here.
+            if (fileName?.includes("wasm-memprof")) {
                 return true;
             }
+            // Skip hooked allocator functions
             const funcName = callSite.getFunctionName();
             for (const hook of HOOKED_FUNCTIONS) {
                 if (funcName === `hooked_${hook}`) {
