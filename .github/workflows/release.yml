@@ -1,16 +1,16 @@
-name: Test
+name: Release
 on:
   push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+    tags: ['v*']
 
 jobs:
-  test:
+  release:
     runs-on: ubuntu-22.04
     steps:
       - uses: actions/checkout@v4
       - run: npm install
       - run: cargo install wasm-pack --version 0.13.1
       - run: make all
-      - run: npm test
+      - run: npm publish
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

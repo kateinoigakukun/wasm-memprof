@@ -27,6 +27,6 @@ update-examples:
 	$(if $(WASI_SDK_PATH),,$(error WASI_SDK_PATH is not set))
 	$(WASI_SDK_PATH)/bin/clang examples/main.c -o examples/a.out.wasm -g
 
-all: proto bindgen build build-plugins
+all: proto bindgen build
 
 .PHONY: proto bindgen build-plugins build update-examples
