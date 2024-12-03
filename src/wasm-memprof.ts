@@ -232,11 +232,7 @@ class ProfileBuilder {
         });
     }
 
-    /**
-     * @param {string} type 
-     * @param {string} unit 
-     */
-    valueType(type, unit) {
+    valueType(type: string, unit: string): perftools.profiles.ValueType {
         const valueType = new perftools.profiles.ValueType();
         valueType.type = this.internString(type);
         valueType.unit = this.internString(unit);
