@@ -245,7 +245,29 @@ class ProfileBuilder {
 }
 
 type WMProfOptions = {
+    /**
+     * The sample rate for the profiler in bytes.
+     * The profiler will sample every `sampleRate` bytes allocated.
+     * Lower values will result in more precise profiles but will also
+     * increase the runtime overhead. Set to 1 to sample every allocation.
+     *
+     * @default 2048 (2kb)
+     */
     sampleRate?: number,
+
+    /**
+     * The maximum number of stack frames to capture in a profile.
+     *
+     * @default 100
+     */
+    stackTraceLimit?: number,
+
+    /**
+     * A demangler function that takes a raw function name and returns the demangled name.
+     *
+     * @param name raw function name (typically mangled)
+     * @returns demangled function name
+     */
     demangler?: (name: string) => string
 };
 
@@ -303,6 +325,17 @@ export class WMProf {
      * @param WebAssembly The WebAssembly object to install the profiler on
      */
     static wrap(WebAssembly: typeof globalThis.WebAssembly, options: WMProfOptions = {}): typeof globalThis.WebAssembly {
+        // FIXME: It's ideal to change the limit at `captureStackTrace` but it
+        // doesn't seem to work at least in V8. Setting it before starting profiling
+        // seems to work.
+        const MINIMUM_STACK_TRACE_LIMIT = 100;
+        if (options.stackTraceLimit) {
+            Error.stackTraceLimit = options.stackTraceLimit;
+        } else if (Error.stackTraceLimit < MINIMUM_STACK_TRACE_LIMIT) {
+            // Set a reasonable default stack trace limit if it's too low
+            Error.stackTraceLimit = MINIMUM_STACK_TRACE_LIMIT;
+        }
+
         globalThis.WMProf = WMProf;
         // Re-construct the WebAssembly object with the polyfill.
         const newWebAssembly = {};
