@@ -36,6 +36,7 @@ const wmprof = WMProf.get(instance);
 wmprof.downloadSnapshot();
 // Or get the pprof profile bytes (Uint8Array)
 const pprof = wmprof.snapshot();
+fs.writeFileSync(`wmprof-${Date.now()}.pb`, pprof);
 
 // Get all installed profilers
 const profilers = WMProf.installed();
@@ -71,3 +72,32 @@ You can upload the pprof profile file to the speedscope website to visualize the
     - `aligned_alloc`
 
     Otherwise, the profiler will not be able to intercept memory allocation and deallocation calls.
+
+
+## Advanced Usage
+
+### Demangle language-specific function names
+
+We currently provide only a Swift demangler, but you can implement your own demangler for other languages.
+
+```js
+import { WMProf } from "wasm-memprof";
+import { SwiftDemangler } from "wasm-memprof/plugins/swift-demangler.js";
+
+const swiftDemangler = SwiftDemangler.create();
+const WebAssembly = WMProf.wrap(globalThis.WebAssembly, {
+  demangler: swiftDemangler.demangle.bind(swiftDemangler),
+});
+```
+
+### Capture all allocations without sampling
+
+By default, the profiler samples memory allocations to reduce the overhead. If you want to capture all allocations, you can set the `sampleRate` option to `1`, which means the profiler traces every memory allocation.
+
+```js
+import { WMProf } from "wasm-memprof";
+
+const WebAssembly = WMProf.wrap(globalThis.WebAssembly, {
+  sampleRate: 1,
+});
+```
