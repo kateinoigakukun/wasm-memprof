@@ -1,15 +1,3 @@
-proto/profile.proto:
-	mkdir -p proto
-	curl -o proto/profile.proto "https://raw.githubusercontent.com/google/pprof/dc51965c6481d757c5a4d8809bdebbe4bb4841ac/proto/profile.proto"
-
-src/profile.pb.js: proto/profile.proto
-	npx pbjs --target static-module --wrap es6 proto/profile.proto -o src/profile.pb.js
-
-src/profile.pb.d.ts: src/profile.pb.js
-	npx pbts -o src/profile.proto.d.ts src/profile.pb.js
-
-proto: src/profile.pb.js src/profile.pb.d.ts
-
 bindgen:
 	wasm-pack build --target web ./bindgen
 	node bindgen/patch.mjs

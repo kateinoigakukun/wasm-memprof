@@ -1,6 +1,6 @@
 import * as bg from "../bindgen/pkg/wasm_memprof.js";
 import init from "../bindgen/pkg/wasm_memprof.js";
-import { perftools } from "./profile.pb.js";
+import { Profile, Location, Function, StringTable, Line, ValueType, Mapping, Sample } from "pprof-format";
 // @ts-ignore
 import bindgenWasm from "../bindgen/pkg/wasm_memprof_bg.wasm" assert { type: "binary" };
 
@@ -190,29 +190,29 @@ class Interner<Key, Value> {
  */
 class ProfileBuilder {
     private demangler?: (name: string) => string;
-    public profile: perftools.profiles.Profile;
-    private stringMap: Interner<string, string>;
-    private locationMap: Interner<string, perftools.profiles.ILocation>;
-    private functionMap: Interner<string, perftools.profiles.IFunction>;
+    public profile: Profile;
+    private stringMap: StringTable;
+    private locationMap: Interner<string, Location>;
+    private functionMap: Interner<string, Function>;
 
     /**
      * @param options Options for the profile builder
      */
     constructor(options: { demangler?: (name: string) => string }) {
         this.demangler = options.demangler;
-        this.profile = new perftools.profiles.Profile();
-        this.stringMap = new Interner(this.profile.stringTable, 0);
+        this.profile = new Profile();
+        this.stringMap = this.profile.stringTable;
         this.locationMap = new Interner(this.profile.location);
         this.functionMap = new Interner(this.profile.function);
         this.internString("");
     }
 
-    finalize(): perftools.profiles.Profile {
+    finalize(): Profile {
         return this.profile;
     }
 
     internString(str: string): number {
-        return this.stringMap.intern(str, (id) => str);
+        return this.stringMap.dedup(str);
     }
 
     internJSFunction(callSite: NodeJS.CallSite): number {
@@ -220,8 +220,7 @@ class ProfileBuilder {
         const name = callSite.getFunctionName();
         const key = `${fileName}:${name}`;
         return this.functionMap.intern(key, (id) => {
-            const function_ = new perftools.profiles.Function();
-            function_.id = id;
+            const function_ = new Function({ id });
             if (name) {
                 function_.systemName = this.internString(name);
                 if (this.demangler) {
@@ -244,8 +243,7 @@ class ProfileBuilder {
         const functionIndex = callSite.getFunction();
         const key = `${callSite.getScriptNameOrSourceURL()}:${functionIndex}`;
         return this.functionMap.intern(key, (id) => {
-            const function_ = new perftools.profiles.Function();
-            function_.id = id;
+            const function_ = new Function({ id });
             const name = callSite.getFunctionName();
             if (name) {
                 function_.systemName = this.internString(name);
@@ -268,20 +266,19 @@ class ProfileBuilder {
         const key = `${callSite.getFileName()}:${callSite.getLineNumber()}:${callSite.getColumnNumber()}:${callSite.getPosition()}`;
         return this.locationMap.intern(key, (id) => {
             // Two location types: JS function, wasm function
-            const location = new perftools.profiles.Location();
-            location.id = id;
+            const location = new Location({ id });
             location.mappingId = 1; // We only have one mapping
             const isWasm = callSite.getFileName()?.startsWith("wasm://");
             if (isWasm) {
                 location.address = callSite.getPosition();
                 const function_ = this.internWasmFunction(callSite);
-                location.line = [new perftools.profiles.Line({
+                location.line = [new Line({
                     line: callSite.getLineNumber(),
                     functionId: function_
                 })]
             } else {
                 const function_ = this.internJSFunction(callSite);
-                location.line = [new perftools.profiles.Line({
+                location.line = [new Line({
                     line: callSite.getLineNumber(),
                     functionId: function_
                 })]
@@ -290,10 +287,11 @@ class ProfileBuilder {
         });
     }
 
-    valueType(type: string, unit: string): perftools.profiles.ValueType {
-        const valueType = new perftools.profiles.ValueType();
-        valueType.type = this.internString(type);
-        valueType.unit = this.internString(unit);
+    valueType(type: string, unit: string): ValueType {
+        const valueType = new ValueType({
+            type: this.internString(type),
+            unit: this.internString(unit)
+        });
         return valueType;
     }
 }
@@ -498,7 +496,7 @@ export class WMProf {
         b.profile.periodType = b.valueType("space", "bytes");
         b.profile.period = this.sampleRate;
         b.profile.sampleType.push(b.valueType("inuse_space", "bytes"));
-        const mapping = new perftools.profiles.Mapping({
+        const mapping = new Mapping({
             id: 1
         })
         b.profile.mapping.push(mapping);
@@ -525,8 +523,9 @@ export class WMProf {
         // Construct samples
         for (const [_, { size, stack: _stack }] of this.inUseAllocations) {
             const stack = _stack || [];
-            const sample = new perftools.profiles.Sample();
-            sample.value.push(size);
+            const sample = new Sample({
+                value: [size]
+            });
             for (const callSite of stack) {
                 if (shouldSkip(callSite)) {
                     continue;
@@ -537,7 +536,7 @@ export class WMProf {
             b.profile.sample.push(sample);
         }
 
-        return perftools.profiles.Profile.encode(b.finalize()).finish();
+        return b.profile.encode();
     }
 
     /**
