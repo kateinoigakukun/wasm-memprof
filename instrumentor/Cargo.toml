@@ -12,7 +12,7 @@ crate-type = ["lib", "cdylib"]
 [dependencies]
 anyhow = "1.0.93"
 log = "0.4.22"
-walrus = { git = "https://github.com/rustwasm/walrus.git", rev = "refs/pull/285/head" }
+walrus = "0.23.3"
 
 [dev-dependencies]
 wasmi = "0.40.0"
