@@ -1,0 +1,143 @@
+[
+  {
+    "value": [
+      4
+    ],
+    "locations": [
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "foo",
+              "systemName": "foo",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "__original_main",
+              "systemName": "__original_main",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "_start",
+              "systemName": "_start",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "value": [
+      4
+    ],
+    "locations": [
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "bar",
+              "systemName": "bar",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "__original_main",
+              "systemName": "__original_main",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "_start",
+              "systemName": "_start",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "value": [
+      4
+    ],
+    "locations": [
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "foo",
+              "systemName": "foo",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "bar",
+              "systemName": "bar",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "__original_main",
+              "systemName": "__original_main",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      },
+      {
+        "lines": [
+          {
+            "function": {
+              "name": "_start",
+              "systemName": "_start",
+              "filename": "wasm://wasm/a.out.wasm-0c68f07a"
+            },
+            "line": 1
+          }
+        ]
+      }
+    ]
+  }
+]

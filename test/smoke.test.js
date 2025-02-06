@@ -3,15 +3,55 @@ import * as fs from "fs"
 import * as path from "path"
 import test from 'node:test'
 import { WASI } from "wasi"
-import { execFileSync } from "child_process"
 import assert from "node:assert"
+import { Profile } from "pprof-format"
+
+/** @param {Profile} profile */
+function resolveProfileReferences(profile) {
+    /** @param {Numeric} id */
+    const resolveFunction = (id) => {
+        const function_ = profile.function[Number(id) - 1]
+        return {
+            name: profile.stringTable.strings[function_.name],
+            systemName: profile.stringTable.strings[function_.systemName],
+            filename: profile.stringTable.strings[function_.filename],
+        }
+    }
+    /** @param {import("pprof-format").Line} line */
+    const resolveLine = (line) => {
+        return {
+            function: resolveFunction(line.functionId),
+            line: line.line,
+        }
+    }
+    /** @param {Numeric} id */
+    const resolveLocation = (id) => {
+        const location = profile.location[Number(id) - 1]
+        const lines = location.line.map(line => resolveLine(line))
+        // Skip the location if its lines contain files starting with "node:"
+        if (lines.some(line => line.function.filename.startsWith("node:"))) {
+            return null
+        }
+        return {
+            lines,
+        }
+    }
+    /** @param {import("pprof-format").Sample} sample */
+    const resolveSample = (sample) => {
+        return {
+            value: sample.value,
+            locations: sample.locationId.map(id => resolveLocation(id)).filter(Boolean),
+        }
+    }
+    return profile.sample.map(sample => resolveSample(sample))
+}
 
 test("smoke test", async () => {
     const WebAssembly = WMProf.wrap(globalThis.WebAssembly, {
       sampleRate: 1
     })
     const dirname = path.dirname(new URL(import.meta.url).pathname);
-    const wasmBytes = fs.readFileSync(path.join(dirname, "../examples/a.out.wasm"))
+    const wasmBytes = fs.readFileSync(path.join(dirname, "cases/basic.wasm"))
     const wasi = new WASI({
         version: "preview1",
     })
@@ -20,31 +60,15 @@ test("smoke test", async () => {
     })
     wasi.start(instance)
     const pprof = WMProf.get(instance).snapshot();
-    const tmpdir = fs.mkdtempSync(path.join(dirname, "tmp-"))
-    const pprofPath = path.join(tmpdir, "test.pprof")
-    fs.writeFileSync(pprofPath, pprof)
-    const result = execFileSync("go", ["tool", "pprof", "--raw", pprofPath])
+    
+    const profile = Profile.decode(pprof);
 
-    const expected = `PeriodType: space bytes
-Period: 1
-Samples:
-inuse_space/bytes
-          4: 1 2 3 4 5 6 
-          4: 7 8 3 4 5 6 
-          4: 1 9 8 3 4 5 6 
-Locations
-     1: 0x1f0a M=1 foo wasm://wasm/a.out.wasm-89890da2:1:0 s=0
-     2: 0x1e71 M=1 __original_main wasm://wasm/a.out.wasm-89890da2:1:0 s=0
-     3: 0x1fa6 M=1 _start wasm://wasm/a.out.wasm-89890da2:1:0 s=0
-     4: 0x0 M=1 start node:wasi:114:0 s=0
-     5: 0x0 M=1 run node:internal/test_runner/test:632:0 s=0
-     6: 0x0 M=1 startSubtest node:internal/test_runner/harness:214:0 s=0
-     7: 0x1eb6 M=1 bar wasm://wasm/a.out.wasm-89890da2:1:0 s=0
-     8: 0x1e74 M=1 __original_main wasm://wasm/a.out.wasm-89890da2:1:0 s=0
-     9: 0x1ed3 M=1 bar wasm://wasm/a.out.wasm-89890da2:1:0 s=0
-Mappings
-1: 0x0/0x0/0x0   
-`
-    assert.strictEqual(result.toString(), expected)
-    fs.rmSync(tmpdir, { recursive: true })
+    // Verify profile structure
+    assert.strictEqual(profile.stringTable.strings[profile.periodType.type], "space");
+    assert.strictEqual(profile.stringTable.strings[profile.periodType.unit], "bytes");
+    assert.strictEqual(profile.period, 1);
+
+    const samples = resolveProfileReferences(profile)
+    const expected = JSON.parse(fs.readFileSync(path.join(dirname, "cases/basic.pprof.json"), "utf-8"))
+    assert.deepStrictEqual(samples, expected)
 })
