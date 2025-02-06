@@ -19,6 +19,7 @@
         "./plugins/*": "./dist/plugins/*"
     },
     "devDependencies": {
+        "@types/node": "^22.13.1",
         "esbuild": "^0.24.2",
         "pprof-format": "^2.1.0",
         "typescript": "^5.7.2"

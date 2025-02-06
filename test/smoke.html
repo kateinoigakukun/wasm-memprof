@@ -6,10 +6,10 @@
   <body>
     <pre id="script-content"></pre>
     <script type="module">
-        import { hook, WMProf } from '../dist/wasm-memprof.js';
+        import { WMProf } from '../dist/wasm-memprof.js';
 
         async function start() {
-            const WebAssembly = hook(window.WebAssembly, { sampleRate: 1 });
+            const WebAssembly = WMProf.wrap(window.WebAssembly, { sampleRate: 1 });
             const response = await fetch('../examples/a.out.wasm');
             const { instance } = await WebAssembly.instantiateStreaming(response, {
                 wasi_snapshot_preview1: {
