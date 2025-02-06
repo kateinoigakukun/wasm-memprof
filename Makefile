@@ -12,6 +12,7 @@ proto: src/profile.pb.js src/profile.pb.d.ts
 
 bindgen:
 	wasm-pack build --target web ./bindgen
+	node bindgen/patch.mjs
 
 build:
 	npx esbuild src/wasm-memprof.ts --bundle --format=esm --outfile=dist/wasm-memprof.js --loader:.wasm=binary
