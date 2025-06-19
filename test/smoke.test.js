@@ -11,10 +11,13 @@ function resolveProfileReferences(profile) {
     /** @param {Numeric} id */
     const resolveFunction = (id) => {
         const function_ = profile.function[Number(id) - 1]
+        const filename = profile.stringTable.strings[function_.filename]
         return {
             name: profile.stringTable.strings[function_.name],
             systemName: profile.stringTable.strings[function_.systemName],
-            filename: profile.stringTable.strings[function_.filename],
+            // Strip address part of wasm:// URLs (e.g. wasm://wasm/a.out.wasm-0c68f07a)
+            // as it's not stable
+            filename: filename.startsWith("wasm://") ? "wasm" : filename,
         }
     }
     /** @param {import("pprof-format").Line} line */
@@ -59,7 +62,7 @@ test("smoke test", async () => {
         wasi_snapshot_preview1: wasi.wasiImport,
     })
     wasi.start(instance)
-    const pprof = WMProf.get(instance).snapshot();
+    const pprof = WMProf.get(instance).toPprof();
     
     const profile = Profile.decode(pprof);
 
