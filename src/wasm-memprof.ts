@@ -102,7 +102,7 @@ async function instrumentModule(moduleBytes: BufferSource, WebAssembly: typeof g
 /**
  * List of functions hooked by the profiler
  */
-const HOOKED_FUNCTIONS: string[] = ["malloc", "free", "calloc", "realloc", "posix_memalign", "aligned_alloc"];
+const HOOKED_FUNCTIONS: string[] = ["malloc", "dlmalloc", "free", "dlfree", "calloc", "dlcalloc", "realloc", "dlrealloc", "posix_memalign", "dlposix_memalign", "aligned_alloc", "dlaligned_alloc"];
 
 /**
  * Instrument an import object by adding profiler hooks.
@@ -215,9 +215,9 @@ class ProfileBuilder {
         return this.stringMap.dedup(str);
     }
 
-    internJSFunction(callSite: NodeJS.CallSite): number {
-        const fileName = callSite.getFileName();
-        const name = callSite.getFunctionName();
+    internJSFunction(callSite: SerializedCallSite): number {
+        const fileName = callSite.fileName;
+        const name = callSite.functionName;
         const key = `${fileName}:${name}`;
         return this.functionMap.intern(key, (id) => {
             const function_ = new Function({ id });
@@ -239,12 +239,11 @@ class ProfileBuilder {
         })
     }
 
-    internWasmFunction(callSite: NodeJS.CallSite): number {
-        const functionIndex = callSite.getFunction();
-        const key = `${callSite.getScriptNameOrSourceURL()}:${functionIndex}`;
+    internWasmFunction(callSite: SerializedCallSite): number {
+        const key = `${callSite.fileName}:${callSite.functionName}`;
         return this.functionMap.intern(key, (id) => {
             const function_ = new Function({ id });
-            const name = callSite.getFunctionName();
+            const name = callSite.functionName;
             if (name) {
                 function_.systemName = this.internString(name);
                 if (this.demangler) {
@@ -257,29 +256,29 @@ class ProfileBuilder {
                 function_.name = 0;
                 function_.systemName = 0;
             }
-            function_.filename = this.internString(callSite.getFileName() || "<unknown file>");
+            function_.filename = this.internString(callSite.fileName || "<unknown file>");
             return function_;
         })
     }
 
-    internLocation(callSite: NodeJS.CallSite): number {
-        const key = `${callSite.getFileName()}:${callSite.getLineNumber()}:${callSite.getColumnNumber()}:${callSite.getPosition()}`;
+    internLocation(callSite: SerializedCallSite): number {
+        const key = `${callSite.fileName}:${callSite.lineNumber}:${callSite.columnNumber}:${callSite.position}`;
         return this.locationMap.intern(key, (id) => {
             // Two location types: JS function, wasm function
             const location = new Location({ id });
             location.mappingId = 1; // We only have one mapping
-            const isWasm = callSite.getFileName()?.startsWith("wasm://");
+            const isWasm = callSite.fileName?.startsWith("wasm://");
             if (isWasm) {
-                location.address = callSite.getPosition();
+                location.address = callSite.position;
                 const function_ = this.internWasmFunction(callSite);
                 location.line = [new Line({
-                    line: callSite.getLineNumber(),
+                    line: callSite.lineNumber,
                     functionId: function_
                 })]
             } else {
                 const function_ = this.internJSFunction(callSite);
                 location.line = [new Line({
-                    line: callSite.getLineNumber(),
+                    line: callSite.lineNumber,
                     functionId: function_
                 })]
             }
@@ -330,17 +329,134 @@ type WMProfOptions = {
     useWorker?: boolean
 };
 
-type AllocationInfo = {
+type AllocationInfo<CallSite> = {
     size: number;
-    stack?: NodeJS.CallSite[];
+    stack?: CallSite[];
 };
+
+/**
+ * A map of in-use allocations.
+ * The key is the pointer to the allocation.
+ */
+type InUseAllocations<CallSite> = Map<number, AllocationInfo<CallSite>>;
+
+type SerializedCallSite = {
+    fileName: string | undefined;
+    lineNumber: number | null;
+    columnNumber: number | null;
+    position: number;
+    functionName: string | null;
+}
+
+/**
+ * A snapshot of the current in-use allocations.
+ */
+class Snapshot {
+    #inUseAllocations: InUseAllocations<SerializedCallSite>;
+
+    /**
+     * @internal
+     */
+    constructor(inUseAllocations: InUseAllocations<SerializedCallSite>) {
+        this.#inUseAllocations = inUseAllocations;
+    }
+
+    /**
+     * Merge multiple snapshots into a single snapshot.
+     *
+     * @param snapshots The snapshots to merge
+     * @returns The merged snapshot
+     */
+    static merge(snapshots: Snapshot[]): Snapshot {
+        const inUseAllocations: InUseAllocations<SerializedCallSite> = new Map();
+        for (const snapshot of snapshots) {
+            for (const [ptr, { size, stack: _stack }] of snapshot.#inUseAllocations) {
+                inUseAllocations.set(ptr, { size, stack: _stack });
+            }
+        }
+        return new Snapshot(inUseAllocations);
+    }
+
+    /**
+     * Convert the snapshot to a structured-cloneable object.
+     * This is useful for transferring the snapshot to another thread.
+     *
+     * @returns An opaque structured-cloneable object
+     */
+    transfer(): unknown {
+        return this.#inUseAllocations;
+    }
+
+    /**
+     * Restore a snapshot from a structured-cloneable object.
+     *
+     * @param snapshot The opaque structured-cloneable object, which is
+     * returned by `transfer`.
+     * @returns The restored snapshot
+     */
+    static restore(snapshot: unknown): Snapshot {
+        return new Snapshot(snapshot as InUseAllocations<SerializedCallSite>);
+    }
+
+    /**
+     * Serialize the snapshot to a pprof protobuf message.
+     *
+     * @param options The WMProf options
+     * @param sampleRate The sample rate
+     * @returns The pprof protobuf message
+     */
+    toPprof(options: { demangler?: (name: string) => string }, sampleRate: number): Uint8Array {
+        const serializer = Snapshot.toPprofSerializer(options, sampleRate);
+        for (const [ptr, { size, stack }] of this.#inUseAllocations) {
+            serializer.addSample(ptr, size, stack);
+        }
+        return serializer.finalize();
+    }
+
+    /**
+     * @internal
+     */
+    static toPprofSerializer(options: { demangler?: (name: string) => string }, sampleRate: number): {
+        addSample: (ptr: number, size: number, stack: SerializedCallSite[]) => void;
+        finalize: () => Uint8Array;
+    } {
+        const b = new ProfileBuilder(options);
+        b.profile.periodType = b.valueType("space", "bytes");
+        b.profile.period = sampleRate;
+        b.profile.sampleType.push(b.valueType("inuse_space", "bytes"));
+        const mapping = new Mapping({
+            id: 1
+        })
+        b.profile.mapping.push(mapping);
+
+        return {
+            addSample: (ptr: number, size: number, stack: SerializedCallSite[]) => {
+                const sample = new Sample({
+                    value: [size]
+                });
+                for (const callSite of stack) {
+                    const loc = b.internLocation(callSite);
+                    sample.locationId.push(loc);
+                }
+                b.profile.sample.push(sample);
+            },
+            finalize: () => b.profile.encode()
+        }
+    }
+}
 
 /**
  * WebAssembly Memory Profiler
  */
 export class WMProf {
+    /**
+     * The Snapshot class.
+     *
+     * @see Snapshot
+     */
+    static Snapshot = Snapshot;
 
-    private inUseAllocations: Map<number, AllocationInfo>;
+    private inUseAllocations: InUseAllocations<NodeJS.CallSite>;
     private sampleRate: number;
     private nextSample: number;
     private options: WMProfOptions;
@@ -487,56 +603,84 @@ export class WMProf {
         return this._initiator;
     }
 
+    static #shouldSkip(callSite: NodeJS.CallSite): boolean {
+        // Skip some internal functions from the stack
+        const fileName = callSite.getFileName();
+        // Skip functions from the profiler itself
+        // NOTE: The filename might not be "wasm-memprof.js" as is if
+        // the code is bundled. Thus, we loosely check here.
+        if (fileName?.includes("wasm-memprof")) {
+            return true;
+        }
+        // Skip hooked allocator functions
+        const funcName = callSite.getFunctionName();
+        for (const hook of HOOKED_FUNCTIONS) {
+            if (funcName === `hooked_${hook}`) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    static #serializeCallSite(callSite: NodeJS.CallSite): SerializedCallSite {
+        return {
+            fileName: callSite.getFileName(),
+            lineNumber: callSite.getLineNumber(),
+            columnNumber: callSite.getColumnNumber(),
+            position: callSite.getPosition(),
+            functionName: callSite.getFunctionName(),
+        };
+    }
+
     /**
      * Take a snapshot of the current in-use allocations.
      * Returns a pprof profile protobuf message.
      */
-    public snapshot(): Uint8Array {
-        const b = new ProfileBuilder(this.options);
-        b.profile.periodType = b.valueType("space", "bytes");
-        b.profile.period = this.sampleRate;
-        b.profile.sampleType.push(b.valueType("inuse_space", "bytes"));
-        const mapping = new Mapping({
-            id: 1
-        })
-        b.profile.mapping.push(mapping);
-
-        // Skip some internal functions from the stack
-        const shouldSkip = (callSite: NodeJS.CallSite): boolean => {
-            const fileName = callSite.getFileName();
-            // Skip functions from the profiler itself
-            // NOTE: The filename might not be "wasm-memprof.js" as is if
-            // the code is bundled. Thus, we loosely check here.
-            if (fileName?.includes("wasm-memprof")) {
-                return true;
-            }
-            // Skip hooked allocator functions
-            const funcName = callSite.getFunctionName();
-            for (const hook of HOOKED_FUNCTIONS) {
-                if (funcName === `hooked_${hook}`) {
-                    return true;
-                }
-            }
-            return false;
-        }
-
+    public toPprof(): Uint8Array {
+        const serializer = Snapshot.toPprofSerializer(this.options, this.sampleRate);
         // Construct samples
-        for (const [_, { size, stack: _stack }] of this.inUseAllocations) {
-            const stack = _stack || [];
-            const sample = new Sample({
-                value: [size]
-            });
+        for (const [ptr, { size, stack }] of this.inUseAllocations) {
+            const serializedStack: SerializedCallSite[] = [];
             for (const callSite of stack) {
-                if (shouldSkip(callSite)) {
+                if (WMProf.#shouldSkip(callSite)) {
                     continue;
                 }
-                const loc = b.internLocation(callSite);
-                sample.locationId.push(loc);
+                serializedStack.push(WMProf.#serializeCallSite(callSite));
             }
-            b.profile.sample.push(sample);
+            serializer.addSample(ptr, size, serializedStack);
         }
 
-        return b.profile.encode();
+        return serializer.finalize();
+    }
+
+    /**
+     * Take a snapshot of the current in-use allocations.
+     * Returns a Snapshot object, which can be merged with other snapshots.
+     */
+    public snapshot(): Snapshot {
+        const inUseAllocations: InUseAllocations<SerializedCallSite> = new Map();
+        for (const [ptr, { size, stack }] of this.inUseAllocations) {
+            const serializedStack: SerializedCallSite[] = [];
+            for (const callSite of stack) {
+                if (WMProf.#shouldSkip(callSite)) {
+                    continue;
+                }
+                serializedStack.push(WMProf.#serializeCallSite(callSite));
+            }
+            inUseAllocations.set(ptr, { size, stack: serializedStack });
+        }
+        return new Snapshot(inUseAllocations);
+    }
+
+    /**
+     * Serialize the snapshot to a pprof protobuf message.
+     *
+     * @param main The main WMProf instance
+     * @param snapshot The snapshot to serialize
+     * @returns The pprof protobuf message
+     */
+    static toPprof(main: WMProf, snapshot: Snapshot): Uint8Array {
+        return snapshot.toPprof(main.options, main.sampleRate);
     }
 
     /**
@@ -552,7 +696,7 @@ export class WMProf {
      * Download the current snapshot as a protobuf file.
      */
     public downloadSnapshot() {
-        const buffer = this.snapshot();
+        const buffer = this.toPprof();
         const blob = new Blob([buffer], { type: "application/octet-stream" });
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -584,9 +728,17 @@ export class WMProf {
         }
         this.sampleAllocation(size, ptr);
     }
+    
+    private posthook_dlmalloc(size: number, ptr: number) {
+        this.posthook_malloc(size, ptr);
+    }
 
     private posthook_free(ptr: number) {
         this.inUseAllocations.delete(ptr);
+    }
+
+    private posthook_dlfree(ptr: number) {
+        this.posthook_free(ptr);
     }
 
     private posthook_calloc(ntimes: number, size: number, ptr: number) {
@@ -597,23 +749,39 @@ export class WMProf {
         this.sampleAllocation(size * ntimes, ptr);
     }
 
+    private posthook_dlcalloc(ntimes: number, size: number, ptr: number) {
+        this.posthook_calloc(ntimes, size, ptr);
+    }
+
     private posthook_realloc(ptr: number, size: number, newPtr: number) {
         const info = this.inUseAllocations.get(ptr);
         if (info) {
             this.inUseAllocations.delete(ptr);
-            this.sampleAllocation(size, newPtr);
         }
+        this.sampleAllocation(size, newPtr);
+    }
+
+    private posthook_dlrealloc(ptr: number, size: number, newPtr: number) {
+        this.posthook_realloc(ptr, size, newPtr);
     }
 
     private posthook_posix_memalign(ptr: number, alignment: number, size: number, newPtr: number) {
         const info = this.inUseAllocations.get(ptr);
         if (info) {
             this.inUseAllocations.delete(ptr);
-            this.sampleAllocation(size, newPtr);
         }
+        this.sampleAllocation(size, newPtr);
+    }
+
+    private posthook_dlposix_memalign(ptr: number, alignment: number, size: number, newPtr: number) {
+        this.posthook_posix_memalign(ptr, alignment, size, newPtr);
     }
 
     private posthook_aligned_alloc(alignment: number, size: number, newPtr: number) {
         this.sampleAllocation(size, newPtr);
+    }
+
+    private posthook_dlaligned_alloc(alignment: number, size: number, newPtr: number) {
+        this.posthook_aligned_alloc(alignment, size, newPtr);
     }
 }

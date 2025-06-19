@@ -18,7 +18,15 @@ pub fn allocator_tracees() -> Vec<Tracee> {
             hook_points: [HookPoint::Post].into(),
         },
         Tracee {
+            name: "dlmalloc".to_string(),
+            hook_points: [HookPoint::Post].into(),
+        },
+        Tracee {
             name: "free".to_string(),
+            hook_points: [HookPoint::Post].into(),
+        },
+        Tracee {
+            name: "dlfree".to_string(),
             hook_points: [HookPoint::Post].into(),
         },
         Tracee {
@@ -26,7 +34,15 @@ pub fn allocator_tracees() -> Vec<Tracee> {
             hook_points: [HookPoint::Post].into(),
         },
         Tracee {
+            name: "dlcalloc".to_string(),
+            hook_points: [HookPoint::Post].into(),
+        },
+        Tracee {
             name: "realloc".to_string(),
+            hook_points: [HookPoint::Post].into(),
+        },
+        Tracee {
+            name: "dlrealloc".to_string(),
             hook_points: [HookPoint::Post].into(),
         },
         Tracee {
@@ -34,7 +50,15 @@ pub fn allocator_tracees() -> Vec<Tracee> {
             hook_points: [HookPoint::Post].into(),
         },
         Tracee {
+            name: "dlposix_memalign".to_string(),
+            hook_points: [HookPoint::Post].into(),
+        },
+        Tracee {
             name: "aligned_alloc".to_string(),
+            hook_points: [HookPoint::Post].into(),
+        },
+        Tracee {
+            name: "dlaligned_alloc".to_string(),
             hook_points: [HookPoint::Post].into(),
         },
     ]
