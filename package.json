@@ -13,7 +13,7 @@
     },
     "exports": {
         ".": {
-            "module": "./dist/wasm-memprof.js",
+            "import": "./dist/wasm-memprof.js",
             "types": "./dist/wasm-memprof.d.ts"
         },
         "./plugins/*": "./dist/plugins/*"
