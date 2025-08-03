@@ -35,7 +35,7 @@ const wmprof = WMProf.get(instance);
 // Download the pprof profile file to the client
 wmprof.downloadSnapshot();
 // Or get the pprof profile bytes (Uint8Array)
-const pprof = wmprof.snapshot();
+const pprof = wmprof.toPprof();
 fs.writeFileSync(`wmprof-${Date.now()}.pb`, pprof);
 
 // Get all installed profilers
