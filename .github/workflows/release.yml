@@ -3,6 +3,10 @@ on:
   push:
     tags: ['v*']
 
+permissions:
+  id-token: write
+  contents: read
+
 jobs:
   release:
     runs-on: ubuntu-22.04
@@ -19,6 +23,4 @@ jobs:
       - run: npm install
       - run: cargo install wasm-pack --version 0.13.1
       - run: make all
-      - run: npm publish --provenance --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_AUTH_TOKEN }}
+      - run: npm publish
