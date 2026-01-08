@@ -185,6 +185,14 @@ class Interner<Key, Value> {
     }
 }
 
+type CallSite = {
+    fileName: string | undefined;
+    functionName: string | undefined;
+    lineNumber: number | null;
+    columnNumber: number | null;
+    position: number;
+}
+
 /**
  * Profile builder that constructs the pprof profile format.
  */
@@ -215,7 +223,7 @@ class ProfileBuilder {
         return this.stringMap.dedup(str);
     }
 
-    internJSFunction(callSite: SerializedCallSite): number {
+    internJSFunction(callSite: CallSite): number {
         const fileName = callSite.fileName;
         const name = callSite.functionName;
         const key = `${fileName}:${name}`;
@@ -239,7 +247,7 @@ class ProfileBuilder {
         })
     }
 
-    internWasmFunction(callSite: SerializedCallSite): number {
+    internWasmFunction(callSite: CallSite): number {
         const key = `${callSite.fileName}:${callSite.functionName}`;
         return this.functionMap.intern(key, (id) => {
             const function_ = new Function({ id });
@@ -261,7 +269,7 @@ class ProfileBuilder {
         })
     }
 
-    internLocation(callSite: SerializedCallSite): number {
+    internLocation(callSite: CallSite): number {
         const key = `${callSite.fileName}:${callSite.lineNumber}:${callSite.columnNumber}:${callSite.position}`;
         return this.locationMap.intern(key, (id) => {
             // Two location types: JS function, wasm function
@@ -341,24 +349,31 @@ type AllocationInfo<CallSite> = {
 type InUseAllocations<CallSite> = Map<number, AllocationInfo<CallSite>>;
 
 type SerializedCallSite = {
-    fileName: string | undefined;
+    fileNameId: number;
     lineNumber: number | null;
     columnNumber: number | null;
     position: number;
-    functionName: string | null;
+    functionNameId: number;
+}
+
+type SerializedSnapshot = {
+    inUseAllocations: InUseAllocations<SerializedCallSite>;
+    stringTable: Map<number, string | undefined>;
 }
 
 /**
  * A snapshot of the current in-use allocations.
  */
 class Snapshot {
-    #inUseAllocations: InUseAllocations<SerializedCallSite>;
+    _stringTable: Map<number, string | undefined>;
+    _inUseAllocations: InUseAllocations<SerializedCallSite>;
 
     /**
      * @internal
      */
-    constructor(inUseAllocations: InUseAllocations<SerializedCallSite>) {
-        this.#inUseAllocations = inUseAllocations;
+    constructor({ inUseAllocations, stringTable }: SerializedSnapshot) {
+        this._inUseAllocations = inUseAllocations;
+        this._stringTable = stringTable;
     }
 
     /**
@@ -369,12 +384,27 @@ class Snapshot {
      */
     static merge(snapshots: Snapshot[]): Snapshot {
         const inUseAllocations: InUseAllocations<SerializedCallSite> = new Map();
+        const stringTable: Map<number, string | undefined> = new Map();
         for (const snapshot of snapshots) {
-            for (const [ptr, { size, stack: _stack }] of snapshot.#inUseAllocations) {
-                inUseAllocations.set(ptr, { size, stack: _stack });
+            const stringTableBaseId = stringTable.size;
+            for (const [ptr, { size, stack: _stack }] of snapshot._inUseAllocations.entries()) {
+                const stack: SerializedCallSite[] = [];
+                for (const callSite of _stack) {
+                    stack.push({
+                        fileNameId: stringTableBaseId + callSite.fileNameId,
+                        lineNumber: callSite.lineNumber,
+                        functionNameId: stringTableBaseId + callSite.functionNameId,
+                        columnNumber: callSite.columnNumber,
+                        position: callSite.position,
+                    });
+                }
+                inUseAllocations.set(ptr, { size, stack });
+            }
+            for (const [id, str] of snapshot._stringTable) {
+                stringTable.set(stringTableBaseId + id, str);
             }
         }
-        return new Snapshot(inUseAllocations);
+        return new Snapshot({ inUseAllocations, stringTable });
     }
 
     /**
@@ -384,7 +414,10 @@ class Snapshot {
      * @returns An opaque structured-cloneable object
      */
     transfer(): unknown {
-        return this.#inUseAllocations;
+        return {
+            inUseAllocations: this._inUseAllocations,
+            stringTable: this._stringTable
+        } satisfies SerializedSnapshot;
     }
 
     /**
@@ -395,7 +428,7 @@ class Snapshot {
      * @returns The restored snapshot
      */
     static restore(snapshot: unknown): Snapshot {
-        return new Snapshot(snapshot as InUseAllocations<SerializedCallSite>);
+        return new Snapshot(snapshot as SerializedSnapshot);
     }
 
     /**
@@ -407,7 +440,17 @@ class Snapshot {
      */
     toPprof(options: { demangler?: (name: string) => string }, sampleRate: number): Uint8Array {
         const serializer = Snapshot.toPprofSerializer(options, sampleRate);
-        for (const [ptr, { size, stack }] of this.#inUseAllocations) {
+        for (const [ptr, { size, stack: _stack }] of this._inUseAllocations) {
+            const stack: CallSite[] = [];
+            for (const callSite of _stack) {
+                stack.push({
+                    fileName: this._stringTable.get(callSite.fileNameId),
+                    functionName: this._stringTable.get(callSite.functionNameId),
+                    lineNumber: callSite.lineNumber,
+                    columnNumber: callSite.columnNumber,
+                    position: callSite.position,
+                });
+            }
             serializer.addSample(ptr, size, stack);
         }
         return serializer.finalize();
@@ -417,7 +460,7 @@ class Snapshot {
      * @internal
      */
     static toPprofSerializer(options: { demangler?: (name: string) => string }, sampleRate: number): {
-        addSample: (ptr: number, size: number, stack: SerializedCallSite[]) => void;
+        addSample: (ptr: number, size: number, stack: CallSite[]) => void;
         finalize: () => Uint8Array;
     } {
         const b = new ProfileBuilder(options);
@@ -430,7 +473,7 @@ class Snapshot {
         b.profile.mapping.push(mapping);
 
         return {
-            addSample: (ptr: number, size: number, stack: SerializedCallSite[]) => {
+            addSample: (ptr: number, size: number, stack: CallSite[]) => {
                 const sample = new Sample({
                     value: [size]
                 });
@@ -622,7 +665,7 @@ export class WMProf {
         return false;
     }
 
-    static #serializeCallSite(callSite: NodeJS.CallSite): SerializedCallSite {
+    static #serializeCallSite(callSite: NodeJS.CallSite): CallSite {
         return {
             fileName: callSite.getFileName(),
             lineNumber: callSite.getLineNumber(),
@@ -640,7 +683,7 @@ export class WMProf {
         const serializer = Snapshot.toPprofSerializer(this.options, this.sampleRate);
         // Construct samples
         for (const [ptr, { size, stack }] of this.inUseAllocations) {
-            const serializedStack: SerializedCallSite[] = [];
+            const serializedStack: CallSite[] = [];
             for (const callSite of stack) {
                 if (WMProf.#shouldSkip(callSite)) {
                     continue;
@@ -659,17 +702,38 @@ export class WMProf {
      */
     public snapshot(): Snapshot {
         const inUseAllocations: InUseAllocations<SerializedCallSite> = new Map();
+        const stringInterner = {
+            map: new Map<number, string | undefined>(),
+            reverseMap: new Map<string | undefined, number>(),
+            intern: (str: string | undefined) => {
+                const id = stringInterner.reverseMap.get(str);
+                if (id) {
+                    return id;
+                }
+                const newId = stringInterner.map.size;
+                stringInterner.reverseMap.set(str, newId);
+                stringInterner.map.set(newId, str);
+                return newId;
+            }
+        }
         for (const [ptr, { size, stack }] of this.inUseAllocations) {
             const serializedStack: SerializedCallSite[] = [];
             for (const callSite of stack) {
                 if (WMProf.#shouldSkip(callSite)) {
                     continue;
                 }
-                serializedStack.push(WMProf.#serializeCallSite(callSite));
+                const serializedCallSite: SerializedCallSite = {
+                    fileNameId: stringInterner.intern(callSite.getFileName()),
+                    lineNumber: callSite.getLineNumber(),
+                    columnNumber: callSite.getColumnNumber(),
+                    position: callSite.getPosition(),
+                    functionNameId: stringInterner.intern(callSite.getFunctionName()),
+                }
+                serializedStack.push(serializedCallSite);
             }
             inUseAllocations.set(ptr, { size, stack: serializedStack });
         }
-        return new Snapshot(inUseAllocations);
+        return new Snapshot({ inUseAllocations, stringTable: stringInterner.map });
     }
 
     /**
@@ -728,7 +792,7 @@ export class WMProf {
         }
         this.sampleAllocation(size, ptr);
     }
-    
+
     private posthook_dlmalloc(size: number, ptr: number) {
         this.posthook_malloc(size, ptr);
     }
